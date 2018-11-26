@@ -112,6 +112,12 @@ class BatchNorm(OnnxOpConverter):
             ignores=['spatial', 'is_test', 'consumed_inputs'])(inputs, attr,
                                                                params)
 
+class InstanceNorm(OnnxOpConverter):
+
+    @classmethod
+    def _impl_v1(cls, inputs, attr, params):
+        # NOTE instance norm parameters is different from batch norm
+        return AttrCvt(op_name='instance_norm')(inputs, attr, params)
 
 class Conv(OnnxOpConverter):
 
@@ -727,7 +733,7 @@ def _get_convert_map(opset):
         'GlobalAveragePool': Renamer('global_avg_pool2d'),
         'GlobalMaxPool': Renamer('global_max_pool2d'),
         'BatchNormalization': BatchNorm.get_converter(opset),
-        # 'InstanceNormalization'
+        'InstanceNormalization': InstanceNorm.get_converter(opset),
         # 'LpNormalization'
         'Dropout': AttrCvt('dropout', {'ratio': 'rate'}, ignores=['is_test']),
         'Flatten': Renamer('flatten'),

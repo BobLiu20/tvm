@@ -326,6 +326,108 @@ axis to be the last item in the input shape.
   })
 .set_support_level(1);
 
+// instancenorm
+DMLC_REGISTER_PARAMETER(InstanceNormParam);
+
+inline bool InstanceNormInferShape(const nnvm::NodeAttrs& attrs,
+                                std::vector<TShape>* in_shape,
+                                std::vector<TShape>* out_shape) {
+  const InstanceNormParam& param = nnvm::get<InstanceNormParam>(attrs.parsed);
+  CHECK_EQ(in_shape->size(), 3U)
+      << "Input:[data, gamma, beta]";
+  CHECK_EQ(out_shape->size(), 1U);
+  const TShape &dshape = in_shape->at(0);
+  if (dshape.ndim() == 0) return false;
+  CHECK((size_t)param.axis < dshape.Size());
+
+  TShape bshape({dshape[param.axis]});
+  if (in_shape->at(1).ndim() == 0) in_shape->at(1) = bshape;
+  if (in_shape->at(2).ndim() == 0) in_shape->at(2) = bshape;
+  NNVM_ASSIGN_OUTPUT_SHAPE(attrs, *out_shape, 0, dshape);
+  return true;
+}
+
+inline bool InstanceNormCorrectLayout(const NodeAttrs& attrs,
+                                   std::vector<Layout> *in_layouts,
+                                   const std::vector<Layout> *last_in_layouts,
+                                   std::vector<Layout> *out_layouts) {
+  const InstanceNormParam& param = nnvm::get<InstanceNormParam>(attrs.parsed);
+  CHECK_EQ(in_layouts->size(), 3U);
+  CHECK_EQ(last_in_layouts->size(), 3U);
+  CHECK_EQ(out_layouts->size(), 1U);
+
+  Layout data_layout = in_layouts->at(0);
+  const Layout& origin_data_layout = last_in_layouts->at(0);
+  Layout param_layout("C");
+  if (data_layout.defined()) {
+    if (data_layout.indexof('C') != param.axis) {
+      CHECK(origin_data_layout.defined())
+        << "Channel in data layout " << data_layout
+        << " is not at index " << param.axis;
+      // convert it to the original one.
+      data_layout = origin_data_layout;
+      NNVM_ASSIGN_LAYOUT(*in_layouts, 0, origin_data_layout);
+    } else if (data_layout.indexof('c') >= 0 &&
+               static_cast<uint32_t>(data_layout.indexof('c')) != (data_layout.ndim()-1)) {
+      CHECK(origin_data_layout.defined())
+        << "sub-channel c in data layout " << data_layout
+        << " does not at the final dimension";
+      // convert it to the original one.
+      data_layout = origin_data_layout;
+      NNVM_ASSIGN_LAYOUT(*in_layouts, 0, origin_data_layout);
+    } else {
+      for (Layout::LayoutDim axis : data_layout) {
+        if (Layout::is_subdim(axis) && axis != 'c') {
+          CHECK(origin_data_layout.defined())
+            << "sub-axis other than c appears in data layout " << data_layout;
+          // convert it to the original one.
+          data_layout = origin_data_layout;
+          NNVM_ASSIGN_LAYOUT(*in_layouts, 0, origin_data_layout);
+          break;
+        }
+      }
+    }
+
+    // decide the param layout
+    if (data_layout.defined()) {
+      auto channel_block = data_layout.subsizeof('C');
+      if (channel_block > 0) {
+        param_layout = param_layout.split('C', 1, channel_block);
+      }
+    }
+  }
+
+  NNVM_ASSIGN_LAYOUT(*in_layouts, 0, data_layout);
+  NNVM_ASSIGN_LAYOUT(*in_layouts, 1, param_layout);
+  NNVM_ASSIGN_LAYOUT(*in_layouts, 2, param_layout);
+
+  NNVM_ASSIGN_LAYOUT(*out_layouts, 0, data_layout);
+  return true;
+}
+
+NNVM_REGISTER_OP(instance_norm)
+.describe(R"(
+Instance Normalization for Test...
+)" NNVM_ADD_FILELINE)
+.add_argument("data", "Tensor", "Input to which dropout will be applied")
+.add_argument("gamma", "Tensor", "The gamma scale factor")
+.add_argument("beta", "Tensor", "The beta offset factor")
+.add_arguments(InstanceNormParam::__FIELDS__())
+.set_attr_parser(ParamParser<InstanceNormParam>)
+.set_attr<FGetAttrDict>("FGetAttrDict", ParamGetAttrDict<InstanceNormParam>)
+.set_attr<FCorrectLayout>("FCorrectLayout", InstanceNormCorrectLayout)
+.set_num_inputs(3)
+.set_num_outputs(1)
+.set_attr<FInferShape>("FInferShape", InstanceNormInferShape)
+.set_attr<FInferType>("FInferType", ElemwiseType<3, 1>)
+.set_attr<FListInputNames>("FListInputNames", [](const NodeAttrs& attrs) {
+    return std::vector<std::string>{"data", "gamma", "beta"};
+  })
+.set_attr<FListOutputNames>("FListOutputNames", [](const NodeAttrs& attrs) {
+    return std::vector<std::string>{"output"};
+  })
+.set_support_level(1);
+
 // softmax
 DMLC_REGISTER_PARAMETER(SoftmaxParam);
 

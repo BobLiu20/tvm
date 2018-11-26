@@ -765,3 +765,10 @@ def batch_norm(data,
                               center,
                               scale)
     return TupleWrapper(result, 3)
+
+def instance_norm(data, gamma, beta, axis=1, epsilon=1e-5, center=True, scale=True):
+    r"""
+        instance_norm testing
+    """
+    result = _make.instance_norm(data, gamma, beta, axis, epsilon, center, scale)
+    return result

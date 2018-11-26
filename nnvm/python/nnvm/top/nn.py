@@ -336,6 +336,18 @@ def schedule_upsampling(_, outs, target):
 
 reg.register_pattern("upsampling", OpPattern.INJECTIVE)
 
+@reg.register_compute("instance_norm")
+def compute_instance_norm(attrs, inputs, _):
+    eps = attrs.get_float("epsilon")
+    return topi.nn.instance_norm_inference(inputs[0], inputs[1], inputs[2], eps, False)
+
+@reg.register_schedule("instance_norm")
+def schedule_instance_norm(attrs, outs, target):
+    with tvm.target.create(target):
+        return topi.generic.schedule_instance_norm(outs)
+
+reg.register_pattern("instance_norm", OpPattern.OPAQUE)
+
 @reg.register_compute("lrn")
 def compute_lrn(attrs, inputs, _):
     """Compute definition of lrn"""

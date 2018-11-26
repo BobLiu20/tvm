@@ -18,6 +18,7 @@
 #include <topi/transform.h>
 
 #include <topi/nn/batch_norm.h>
+#include <topi/nn/instance_norm.h>
 #include <topi/nn/bnn.h>
 #include <topi/nn/dense.h>
 #include <topi/nn/dilate.h>
@@ -326,6 +327,16 @@ TVM_REGISTER_GLOBAL("topi.nn.batch_norm_inference")
                                  args[4],
                                  static_cast<double>(args[5]),
                                  args[6]);
+  });
+
+/* Ops from nn/instance_norm.h */
+TVM_REGISTER_GLOBAL("topi.nn.instance_norm_inference")
+.set_body([](TVMArgs args, TVMRetValue *rv) {
+  *rv = nn::instance_norm_inference(args[0],
+                                 args[1],
+                                 args[2],
+                                 static_cast<double>(args[3]),
+                                 args[4]);
   });
 
 /* Ops from nn/bnn.h */

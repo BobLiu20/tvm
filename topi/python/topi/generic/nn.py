@@ -372,6 +372,13 @@ def schedule_binary_dense(outs):
     """
     return _default_schedule(outs, False)
 
+@tvm.target.generic_func
+def schedule_instance_norm(outs):
+    # this is default_schedule setting
+    # we should also implement cuda schedule setting
+    target = tvm.target.current_target(allow_none=False)
+    cpp_target = cpp.TEST_create_target(target.target_name)
+    return cpp.generic.default_schedule(cpp_target, outs, False)
 
 @tvm.target.generic_func
 def schedule_lrn(outs):
