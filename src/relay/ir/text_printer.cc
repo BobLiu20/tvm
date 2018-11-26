@@ -3,7 +3,7 @@
  * \file text_printer.cc
  * \brief Text printer to print relay in text form.
  */
-#include <tvm/relay/environment.h>
+#include <tvm/relay/module.h>
 #include <tvm/relay/expr_functor.h>
 #include <sstream>
 #include "type_functor.h"
@@ -113,6 +113,11 @@ class TextMetaDataContext {
     return SaveJSON(Array<NodeRef>(meta_data_));
   }
 
+  /*! \return whether the meta data context is empty. */
+  bool empty() const {
+    return meta_data_.empty();
+  }
+
  private:
   /*! \brief additional metadata stored in TVM json format */
   std::vector<NodeRef> meta_data_;
@@ -125,6 +130,9 @@ class TextPrinter :
     public TypeFunctor<void (const Type&, std::ostream& os)>,  // NOLINT(*)
     public AttrFunctor<void (const NodeRef&, std::ostream& os)> { // NOLINT(*)
  public:
+  explicit TextPrinter(bool show_meta_data,
+                       runtime::TypedPackedFunc<std::string(Expr)> annotate)
+      : show_meta_data_(show_meta_data), annotate_(annotate) {}
   /*!
    * \brief Print a node to string.
    * \param node.
@@ -133,8 +141,8 @@ class TextPrinter :
   std::string Print(const NodeRef& node) {
     if (node.as<FunctionNode>()) {
       this->PrintFunc(Downcast<Function>(node));
-    } else if (node.as<EnvironmentNode>()) {
-      this->PrintEnv(Downcast<Environment>(node));
+    } else if (node.as<ModuleNode>()) {
+      this->PrintEnv(Downcast<Module>(node));
     } else if (node.as_derived<TypeNode>()) {
       this->PrintType(Downcast<Type>(node), stream_);
     } else if (node.as_derived<ExprNode>()) {
@@ -142,13 +150,17 @@ class TextPrinter :
     } else {
       stream_ << node;
     }
-    std::string meta_json = meta_.GetMetaSection();
-    if (meta_json.length() != 0) {
-      // append meta data in the end.
-      stream_ << "# meta data\n"
-              << "r\"\"\"\n"
-              << meta_json << "\n"
-              << "\"\"\"";
+    if (!meta_.empty()) {
+      if (show_meta_data_) {
+        std::string meta_json = meta_.GetMetaSection();
+        // append meta data in the end.
+        stream_ << "# meta data\n"
+                << "r\"\"\"\n"
+                << meta_json << "\n"
+                << "\"\"\"";
+      } else {
+        stream_ << "# meta data omitted. you can use show_meta_data=True to include meta-data\n";
+      }
     }
     return stream_.str();
   }
@@ -158,9 +170,9 @@ class TextPrinter :
     stream_ << "\n";
   }
 
-  void PrintEnv(const Environment& env) {
+  void PrintEnv(const Module& mod) {
     int counter = 0;
-    for (const auto& kv : env->functions) {
+    for (const auto& kv : mod->functions) {
       std::ostringstream os;
       if (counter++ != 0) {
         stream_ << "\n";
@@ -225,7 +237,9 @@ class TextPrinter :
     TextValue id = this->AllocTempVar();
     this->PrintIndent();
     stream_ << id << " = " << meta_.GetMetaNode(GetRef<NodeRef>(op));
-    this->PrintEndInst("\n");
+    this->PrintEndInst("");
+    this->PrintOptionalInfo(GetRef<Expr>(op));
+    stream_ << '\n';
     return id;
   }
 
@@ -271,7 +285,7 @@ class TextPrinter :
   TextValue VisitExpr_(const FunctionNode* op) final {
     TextValue id = AllocTempVar();
     std::ostringstream os;
-    os << id << " = function";
+    os << id << " = fn";
     this->PrintFuncInternal(os.str(), GetRef<Function>(op));
     this->PrintEndInst("\n");
     return id;
@@ -279,11 +293,11 @@ class TextPrinter :
 
   TextValue VisitExpr_(const CallNode* op) final {
     // possibly through meta-data
-    TextValue call_op = GetValue(op->op);
     std::vector<TextValue> args;
     for (Expr arg : op->args) {
       args.emplace_back(GetValue(arg));
     }
+    TextValue call_op = GetValue(op->op);
     TextValue id = this->AllocTempVar();
     this->PrintIndent();
 
@@ -401,7 +415,11 @@ class TextPrinter :
    * \param os The output type.
    */
   void PrintAttr(const NodeRef& value, std::ostream& os) {  // NOLINT(*)
-    this->VisitAttr(value, os);
+    if (value.defined()) {
+      this->VisitAttr(value, os);
+    } else {
+      os << "None";
+    }
   }
   //------------------------------------
   // Overload of Attr printing functions
@@ -516,11 +534,14 @@ class TextPrinter :
         stream_ << ",\n";
       }
     }
-    stream_ << ") ";
+    stream_ << ')';
     if (fn->ret_type.defined()) {
-      stream_ << " -> ";
+      stream_ << '\n';
+      this->PrintIndent(decl_indent);
+      stream_ << "-> ";
       this->PrintType(fn->ret_type, stream_);
     }
+    stream_ << ' ';
     this->PrintScope(fn->body);
   }
   /*!
@@ -529,7 +550,9 @@ class TextPrinter :
    */
   void PrintOptionalInfo(const Expr& expr) {
     // additional information in comment.
-    if (expr->checked_type_.defined()) {
+    if (annotate_ != nullptr) {
+      stream_ << " # " << annotate_(expr);
+    } else if (expr->checked_type_.defined()) {
       stream_ << " # ty=";
       this->PrintType(expr->checked_type(), stream_);
     }
@@ -675,7 +698,10 @@ class TextPrinter :
       name = "%" + name;
     }
     TextValue val(GetUniqueName(name));
-    CHECK(!memo_.count(var)) << "Duplicated variable " << var;
+    // still print if ir is malformed, but show the error.
+    if (memo_.count(var)) {
+      memo_[var] = TextValue(val.name + "-malformed-ir");
+    }
     memo_[var] = val;
     return val;
   }
@@ -683,6 +709,10 @@ class TextPrinter :
  private:
   class AttrPrinter;
   friend class AttrPrinter;
+  /*! \brief Whether to print meta data. */
+  bool show_meta_data_;
+  /*! \brief additional comment function */
+  runtime::TypedPackedFunc<std::string(Expr)> annotate_;
   /*! \brief meta data context */
   TextMetaDataContext meta_;
   /*! \brief Check whether scope is still valid */
@@ -773,12 +803,16 @@ void TextPrinter::PrintCallAttrs(const Expr& op,
   os << ", " << meta_.GetMetaNode(attrs);
 }
 
-std::string RelayPrint(const NodeRef& node) {
-  return TextPrinter().Print(node);
+std::string RelayPrint(const NodeRef& node,
+                       bool show_meta_data,
+                       runtime::TypedPackedFunc<std::string(Expr)> annotate) {
+  return TextPrinter(show_meta_data, annotate).Print(node);
 }
 
-TVM_REGISTER_API("relay._expr._text_print")
-.set_body_typed<std::string(const NodeRef&)>(RelayPrint);
+TVM_REGISTER_API("relay._expr.RelayPrint")
+.set_body_typed<std::string(
+    const NodeRef&, bool,
+    runtime::TypedPackedFunc<std::string(Expr)>)>(RelayPrint);
 
 }  // namespace relay
 }  // namespace tvm

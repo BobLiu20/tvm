@@ -11,7 +11,9 @@
 #include <tvm/relay/op.h>
 #include <tvm/relay/expr.h>
 #include <tvm/relay/attrs/transform.h>
-#include "../op/nn/layout.h"
+#include <string>
+#include "../op/layout.h"
+
 
 namespace tvm {
 namespace relay {
@@ -119,6 +121,53 @@ inline bool IsDepthwiseConv2D(const Call& call,
       is_const_int(wshape[1], 1);
 }
 
+/*!
+ * \brief Get super-dimension of output channels of conv2d
+ * \param call The conv2d call.
+ * \return Super-dimension size of output channels of conv2d.
+ */
+inline int64_t GetConv2DSuperChannelsDim(const CallNode* call) {
+    auto param = call->attrs.as<Conv2DAttrs>();
+    auto tweight = call->args[1]->type_as<TensorTypeNode>();
+    auto index = param->weight_layout.find('O');
+    CHECK_NE(index, std::string::npos);
+    auto channels = as_const_int(tweight->shape[index]);
+    return *channels;
+}
+
+/*!
+ * \brief Create a Constant with a scalar
+ *
+ * \param dtype The data type.
+ * \param value The value of the scalar.
+ * \return A Constant.
+ */
+template<typename T>
+inline Constant MakeConstantScalar(DataType dtype, T value) {
+  CHECK_EQ(sizeof(T) * 8, dtype.bits()) << "data type mismatch";
+  runtime::NDArray arr = runtime::NDArray::Empty({}, Type2TVMType(dtype), {kDLCPU, 0});
+  *static_cast<T*>(arr->data) = value;
+  return ConstantNode::make(arr);
+}
+
+
+inline Expr Negative(Expr x) {
+  static const Op& op = Op::Get("negative");
+  return CallNode::make(op, {x}, Attrs(), {});
+}
+
+
+inline Expr Sqrt(Expr x) {
+  static const Op& op = Op::Get("sqrt");
+  return CallNode::make(op, {x}, Attrs(), {});
+}
+
+
+inline Expr Add(Expr lhs, Expr rhs) {
+  static const Op& op = Op::Get("add");
+  return CallNode::make(op, {lhs, rhs}, Attrs(), {});
+}
+
 
 inline Expr Multiply(Expr lhs, Expr rhs) {
   static const Op& op = Op::Get("multiply");
@@ -136,6 +185,10 @@ inline Expr ReshapeLike(Expr lhs, Expr rhs) {
   static const Op& op = Op::Get("reshape_like");
   return CallNode::make(op, {lhs, rhs}, Attrs(), {});
 }
+
+Expr MakeConcatenate(Expr data, int axis);
+
+Expr MakeStridedSlice(Expr data, Array<Integer> begin, Array<Integer> end, Array<Integer> strides);
 
 }  // namespace relay
 }  // namespace tvm

@@ -10,6 +10,7 @@
 #include <vector>
 #include <iterator>
 #include <algorithm>
+#include <limits>
 
 #include "topi/tags.h"
 #include "topi/detail/ravel_unravel.h"
@@ -195,30 +196,34 @@ inline Tensor reshape(const Tensor& x,
 * \param x The input tensor
 * \param axis Indices of the dimensions to remove. If this is empty,
 * all entries with a constant size of 1 will be removed.
+ * \param atleast1d Whether the output need to be atleast1d.
 * \param name The name of the operation
 * \param tag The tag to mark the operation
 *
 * \return A Tensor whose op member is the squeeze operation
 */
 inline Tensor squeeze(const Tensor& x,
-                      Array<Expr> axis,
+                      Array<Integer> axis,
+                      bool atleast1d = false,
                       std::string name = "tensor",
                       std::string tag = kInjective) {
-  auto axis_val = GetConstIntValues(axis, "axis");
   auto ndim = x->shape.size();
-  if (axis_val.size() == 0) {
+  std::vector<int> axis_val;
+  if (!axis.defined() || axis.size() == 0) {
     for (size_t i = 0; i < ndim; ++i) {
       if (IsConstInt(x->shape[i]) && GetConstInt(x->shape[i]) == 1) {
         axis_val.push_back(static_cast<int>(i));
       }
     }
   } else {
-    for (size_t i = 0; i < axis_val.size(); ++i) {
-      if (axis_val[i] < 0) {
-        axis_val[i] += static_cast<int>(x->shape.size());
+    for (size_t i = 0; i < axis.size(); ++i) {
+      int64_t val = axis[i]->value;
+      if (val < 0) {
+        val += static_cast<int>(x->shape.size());
       }
-      CHECK_EQ(GetConstInt(x->shape[axis_val[i]]), 1) <<
-        "Dimension " << axis[i] << " must have size 1";
+      CHECK_EQ(GetConstInt(x->shape[val]), 1) <<
+          "Dimension " << val << " must have size 1";
+      axis_val.push_back(val);
     }
   }
 
@@ -230,7 +235,7 @@ inline Tensor squeeze(const Tensor& x,
       out_shape.push_back(x->shape[i]);
     }
   }
-  if (out_shape.size() == 0) {
+  if (out_shape.size() == 0 && atleast1d) {
     out_shape.push_back(1);
   }
 
@@ -327,7 +332,7 @@ inline Tensor concatenate(const Array<Tensor>& inputs,
 * \return A Tensor whose op member is the split operation
 */
 inline Array<Tensor> split(const Tensor& x,
-                           Array<Expr> split_indices,
+                           Array<Integer> split_indices,
                            int axis,
                            std::string name = "tensor",
                            std::string tag = kInjective) {
@@ -337,14 +342,15 @@ inline Array<Tensor> split(const Tensor& x,
   CHECK_LT(axis, x->shape.size()) << "axis out of bounds";
 
   auto src_axis_size = static_cast<int>(GetConstInt(x->shape[axis]));
-
-  auto split_indices_val = GetConstIntValues(split_indices, "split_indices");
-  CHECK(std::is_sorted(split_indices_val.begin(), split_indices_val.end())) <<
-    "split_indices must be sorted";
-
   std::vector<int> begin_ids;
   begin_ids.push_back(0);
-  std::copy(split_indices_val.begin(), split_indices_val.end(), std::back_inserter(begin_ids));
+
+  for (Integer idx : split_indices) {
+    int val = static_cast<int>(idx->value);
+    CHECK_GT(val, begin_ids.back())
+        << "split_indices must be sorted";
+    begin_ids.push_back(val);
+  }
 
   Array< Array<Expr> > out_shapes;
   for (size_t i = 0; i < begin_ids.size(); ++i) {
@@ -403,31 +409,51 @@ inline Array<Tensor> split(const Tensor& x,
 * \return A Tensor whose op member is the split operation
 */
 inline Tensor strided_slice(const Tensor& x,
-                            const Array<Expr>& begin,
-                            const Array<Expr>& end,
-                            const Array<Expr>& strides,
+                            const Array<Integer>& begin,
+                            const Array<Integer>& end,
+                            const Array<Integer>& strides,
                             std::string name = "tensor",
                             std::string tag = kInjective) {
   size_t src_tensor_dim = static_cast<size_t>(x->shape.size());
-  std::vector<int64_t> begin_vec = GetConstInt64Values(begin, "begin");
-  std::vector<int64_t> end_vec = GetConstInt64Values(end, "end");
-  std::vector<int64_t> stride_vec = GetConstInt64Values(strides, "strides");
-  // in case user has not provided begin indices for all the axes,
-  // then inflate it with default value = 0
-  for (size_t i = begin_vec.size(); i < src_tensor_dim; ++i) {
-    begin_vec.push_back(0);
+  // Setup the ranges.
+  // NOTE: this code duplicates the shape inference logic relay.op
+  // Consider to refactor in the future.
+  std::vector<int64_t> stride_vec;
+  for (Integer i : strides) {
+    CHECK(i.defined());
+    stride_vec.push_back(i->value);
   }
-  // in case user has not provided end indices for all the axes,
-  // then inflate it with default value = input_tensor.shape[axis]
-  for (size_t i = end_vec.size(); i < src_tensor_dim; ++i) {
-    end_vec.push_back(GetConstInt(x->shape[i]));
-  }
-  // in case user has not provided stride values,
-  // then inflate it with default value = 1
   for (size_t i = stride_vec.size(); i < src_tensor_dim; ++i) {
     stride_vec.push_back(1);
   }
+  const int64_t max_range = std::numeric_limits<int64_t>::max();
 
+  std::vector<int64_t> begin_vec;
+  for (size_t i = 0; i < begin.size(); ++i) {
+    if (!begin[i].defined()) {
+      // value=None
+      begin_vec.push_back(stride_vec[i] > 0 ? 0 : max_range);
+    } else {
+      begin_vec.push_back(begin[i]->value);
+    }
+  }
+  for (size_t i = begin_vec.size(); i < src_tensor_dim; ++i) {
+    begin_vec.push_back(stride_vec[i] > 0 ? 0 : max_range);
+  }
+
+  std::vector<int64_t> end_vec;
+  for (size_t i = 0; i < end.size(); ++i) {
+    // allow end to be None
+    if (!end[i].defined()) {
+      end_vec.push_back(stride_vec[i] < 0 ? 0 : max_range);
+    } else {
+      end_vec.push_back(end[i]->value);
+    }
+  }
+  for (size_t i = end_vec.size(); i < src_tensor_dim; ++i) {
+    end_vec.push_back(stride_vec[i] < 0 ? 0 : max_range);
+  }
+  // Compute
   Array<Expr> out_shape;
   Array<Expr> begin_expr;
   Array<Expr> strides_expr;
@@ -483,10 +509,10 @@ inline Tensor strided_slice(const Tensor& x,
 * \return A Tensor whose op member is the split operation
 */
 inline Array<Tensor> split_sections(const Tensor& x,
-                           int num_sections,
-                           int axis,
-                           std::string name = "tensor",
-                           std::string tag = kInjective) {
+                                    int num_sections,
+                                    int axis,
+                                    std::string name = "tensor",
+                                    std::string tag = kInjective) {
   if (axis < 0) {
     axis += static_cast<int>(x->shape.size());
   }
@@ -499,7 +525,7 @@ inline Array<Tensor> split_sections(const Tensor& x,
     << "num_sections must be an integer factor of the size of axis " << axis
     << " (" << src_axis_size << ")";
 
-  Array<Expr> split_indices;
+  Array<Integer> split_indices;
   auto seg_size = src_axis_size / num_sections;
   for (int i = 0; i < num_sections; ++i) {
     // region at index 0 is added by split()
@@ -637,6 +663,60 @@ inline Tensor where(const Tensor& condition,
       }, name, tag);
   }
   return out;
+}
+
+/*!
+* \brief Gather elements from a n-dimension array.
+*
+* \param data The source array.
+* \param indices The indices of the values to extract.
+* \param name The name of the operation.
+* \param tag The tag to mark the operation.
+*
+* \return A Tensor whose op member is the gather_nd operation
+*/
+inline Tensor gather_nd(const Tensor& data,
+                        const Tensor& indices,
+                        std::string name = "tensor",
+                        std::string tag = kInjective) {
+  size_t ndim_d = data->shape.size();
+  size_t ndim_i = indices->shape.size();
+  CHECK_GT(ndim_i, 1) << "indices tensor must have at least 2 dimensions";
+  size_t indices_dim0 = static_cast<size_t>(GetConstInt(indices->shape[0]));
+  CHECK_LE(indices_dim0, ndim_d) << "dim 0 of indices tensor must be no more "
+                                 << "than dimensions of data tensor";
+  Array<Expr> out_shape;
+  for (size_t i = 1; i < ndim_i; ++i) {
+    out_shape.push_back(indices->shape[i]);
+  }
+  for (size_t i = indices_dim0; i < ndim_d; ++i) {
+    out_shape.push_back(data->shape[i]);
+  }
+  if (out_shape.size() == 0) {
+    out_shape.push_back(make_const(Int(32), 1));
+  }
+  return compute(
+        out_shape, [&](const Array<Var>& out_index) {
+          Array<Expr> indices_position;
+          indices_position.push_back(0);
+          for (size_t i = 0; i < ndim_i - 1; ++i) {
+            indices_position.push_back(out_index[i]);
+          }
+          Array<Expr> real_indices;
+          for (size_t i = 0; i < indices_dim0; ++i) {
+            indices_position.Set(0, make_const(Int(32), i));
+            if (indices->dtype.is_int()) {
+              real_indices.push_back(indices(indices_position));
+            } else {
+              real_indices.push_back(
+                  tvm::cast(tvm::Int(32), indices(indices_position)));
+            }
+          }
+          for (size_t i = ndim_i - 1; i < out_index.size(); ++i) {
+            real_indices.push_back(out_index[i]);
+          }
+          return data(real_indices);
+        }, name, tag);
 }
 
 /*!

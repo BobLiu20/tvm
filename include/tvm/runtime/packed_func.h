@@ -73,6 +73,8 @@ class PackedFunc {
   using FType = std::function<void (TVMArgs args, TVMRetValue* rv)>;
   /*! \brief default constructor */
   PackedFunc() {}
+  /*! \brief constructor from null */
+  PackedFunc(std::nullptr_t null) {}  // NOLINT(*)
   /*!
    * \brief constructing a packed function from a std::function.
    * \param body the internal container of packed function.
@@ -161,6 +163,8 @@ class TypedPackedFunc<R(Args...)> {
   using TSelf = TypedPackedFunc<R(Args...)>;
   /*! \brief default constructor */
   TypedPackedFunc() {}
+  /*! \brief constructor from null */
+  TypedPackedFunc(std::nullptr_t null) {}  // NOLINT(*)
   /*!
    * \brief construct by wrap a PackedFunc
    *
@@ -888,6 +892,7 @@ inline std::ostream& operator<<(std::ostream& os, TVMType t) {  // NOLINT(*)
   }
   return os;
 }
+
 #endif
 
 inline std::string TVMType2String(TVMType t) {

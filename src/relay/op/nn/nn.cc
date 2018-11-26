@@ -7,10 +7,13 @@
 #include <tvm/relay/op.h>
 #include <tvm/relay/attrs/nn.h>
 #include <tvm/relay/attrs/image.h>
+#include <topi/nn.h>
+#include <topi/nn/softmax.h>
+#include <topi/nn/flatten.h>
 #include <vector>
 #include "../type_relations.h"
 #include "../op_common.h"
-#include "layout.h"
+#include "../layout.h"
 
 namespace tvm {
 namespace relay {
@@ -91,16 +94,15 @@ bool DenseRel(const Array<Type>& types,
   Array<tvm::Expr> oshape = data->shape;
   if (param->units.defined()) {
     Array<tvm::Expr> dshape = data->shape;
-
     // validate the weight shape is proper if defined
     // Assign weight type
-    Array<IndexExpr> wshape({dshape[dshape.size() - 1], param->units});
+    Array<IndexExpr> wshape({param->units, dshape[dshape.size() - 1]});
     reporter->Assign(types[1], TensorTypeNode::make(wshape, data->dtype));
     oshape.Set((oshape.size() - 1), param->units);
   } else {
     if (weight == nullptr) return false;
     Array<tvm::Expr> wshape = weight->shape;
-    oshape.Set((oshape.size() - 1), wshape[wshape.size() - 1]);
+    oshape.Set((oshape.size() - 1), wshape[0]);
   }
 
   // assign output type
@@ -168,7 +170,15 @@ RELAY_REGISTER_OP("nn.leaky_relu")
 .set_num_inputs(1)
 .add_argument("data", "Tensor", "Input data.")
 .set_support_level(3)
-.add_type_rel("Identity", IdentityRel);
+.add_type_rel("Identity", IdentityRel)
+.set_attr<FTVMCompute>(
+  "FTVMCompute", [](const Attrs& attrs,
+                    const Array<Tensor>& inputs,
+                    const Type& out_type,
+                    const Target& target) {
+    const auto* param = attrs.as<LeakyReluAttrs>();
+    return Array<Tensor>{ topi::leaky_relu(inputs[0], param->alpha) };
+});
 
 
 TVM_REGISTER_NODE_TYPE(PReluAttrs);
@@ -224,7 +234,15 @@ where :math:`*` is an channelwise multiplication for each sample in the batch.
 .add_argument("data", "Tensor", "Input data.")
 .add_argument("alpha", "Tensor", "Input channelwise alpha.")
 .set_support_level(3)
-.add_type_rel("PRelu", PReluRel);
+.add_type_rel("PRelu", PReluRel)
+.set_attr<FTVMCompute>(
+  "FTVMCompute", [](const Attrs& attrs,
+                    const Array<Tensor>& inputs,
+                    const Type& out_type,
+                    const Target& target) {
+    const auto* param = attrs.as<PReluAttrs>();
+    return Array<Tensor>{ topi::prelu(inputs[0], inputs[1], param->axis)};
+});
 
 
 TVM_REGISTER_API("relay.op.nn._make.softmax")
@@ -253,7 +271,15 @@ RELAY_REGISTER_OP("nn.softmax")
 .set_num_inputs(1)
 .add_argument("data", "Tensor", "The input tensor.")
 .set_support_level(1)
-.add_type_rel("Identity", IdentityRel);
+.add_type_rel("Identity", IdentityRel)
+.set_attr<FTVMCompute>("FTVMCompute", [](const Attrs& attrs,
+                                         const Array<Tensor>& inputs,
+                                         const Type& out_type,
+                                         const Target& target) {
+  const auto* param = attrs.as<SoftmaxAttrs>();
+  CHECK(param != nullptr);
+  return Array<Tensor>{ topi::nn::softmax(inputs[0], param->axis) };
+});
 
 
 TVM_REGISTER_API("relay.op.nn._make.log_softmax")
@@ -282,7 +308,18 @@ RELAY_REGISTER_OP("nn.log_softmax")
 .set_num_inputs(1)
 .add_argument("data", "Tensor", "The input tensor.")
 .set_support_level(1)
-.add_type_rel("Identity", IdentityRel);
+.add_type_rel("Identity", IdentityRel)
+.set_attr<FTVMCompute>("FTVMCompute", [](const Attrs& attrs,
+                                         const Array<Tensor>& inputs,
+                                         const Type& out_type,
+                                         const Target& target) {
+  const auto* param = attrs.as<SoftmaxAttrs>();
+  CHECK(param != nullptr);
+  CHECK(param->axis == -1 || param->axis == static_cast<int32_t>(inputs[0].ndim()) - 1)
+      << "log_softmax currently only works on last dimension";
+  return Array<Tensor>{ topi::nn::log_softmax(inputs[0]) };
+});
+
 
 
 // BatchFlatten
@@ -345,7 +382,14 @@ Example::
 .set_num_inputs(1)
 .add_argument("data", "Tensor", "The input tensor.")
 .set_support_level(2)
-.add_type_rel("BatchFlatten", BatchFlattenRel);
+.add_type_rel("BatchFlatten", BatchFlattenRel)
+.set_attr<FTVMCompute>(
+  "FTVMCompute", [](const Attrs& attrs,
+                    const Array<Tensor>& inputs,
+                    const Type& out_type,
+                    const Target& target) {
+    return Array<Tensor>{ topi::nn::flatten(inputs[0]) };
+});
 
 
 // relu
@@ -365,14 +409,20 @@ RELAY_REGISTER_OP("nn.relu")
 .set_num_inputs(1)
 .add_argument("data", "Tensor", "The input tensor.")
 .set_support_level(1)
-.add_type_rel("Identity", IdentityRel);
+.add_type_rel("Identity", IdentityRel)
+.set_attr<FTVMCompute>("FTVMCompute", [](const Attrs& attrs,
+                                         const Array<Tensor>& inputs,
+                                         const Type& out_type,
+                                         const Target& target) {
+  return Array<Tensor>{ topi::relu(inputs[0], 0.0f) };
+});
 
 
 // Positional relay function to create LRN operator used by frontend FFI.
 TVM_REGISTER_NODE_TYPE(LRNAttrs);
 
 Expr MakeLRN(Expr data,
-             IndexExpr size,
+             int size,
              int axis,
              double alpha,
              double beta,

@@ -89,7 +89,7 @@ struct SoftmaxAttrs : public tvm::AttrsNode<SoftmaxAttrs> {
   int axis;
 
   TVM_DECLARE_ATTRS(SoftmaxAttrs, "relay.attrs.SoftmaxAttrs") {
-      TVM_ATTR_FIELD(axis).set_default(1)
+      TVM_ATTR_FIELD(axis).set_default(-1)
           .describe("The axis to sum over when computing softmax.");
   }
 };
@@ -327,7 +327,7 @@ struct BatchNormAttrs : public tvm::AttrsNode<BatchNormAttrs> {
 
 /*! \brief Attributes for LRN operator */
 struct LRNAttrs : public tvm::AttrsNode<LRNAttrs> {
-  IndexExpr size;
+  int size;
   int axis;
   double bias;
   double alpha;

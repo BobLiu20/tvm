@@ -1,10 +1,13 @@
 # pylint: disable=wildcard-import, redefined-builtin, invalid-name
 """The Relay IR namespace containing the IR definition and compiler."""
+from __future__ import absolute_import
+from ..api import register_func
 from . import base
 from . import ty
 from . import expr
-from . import env
+from . import module
 from . import ir_pass
+from .build_module import build, build_config, create_executor
 
 # Root operators
 from .op import Op
@@ -14,6 +17,8 @@ from .op.transform import *
 from . import nn
 from . import vision
 from . import image
+from . import frontend
+from . import backend
 
 from .scope_builder import ScopeBuilder
 
@@ -21,7 +26,7 @@ from .scope_builder import ScopeBuilder
 Span = base.Span
 
 # Env
-Environment = env.Environment
+Module = module.Module
 
 # Type
 Type = ty.Type
@@ -36,6 +41,7 @@ IncompleteType = ty.IncompleteType
 scalar_type = ty.scalar_type
 
 # Expr
+Expr = expr.Expr
 Constant = expr.Constant
 Tuple = expr.Tuple
 Var = expr.Var
@@ -46,6 +52,14 @@ Let = expr.Let
 If = expr.If
 TupleGetItem = expr.TupleGetItem
 
+
 # helper functions
 var = expr.var
 const = expr.const
+bind = expr.bind
+
+# pylint: disable=unused-argument
+@register_func("relay.debug")
+def _debug(*args):
+    import pdb
+    pdb.set_trace()

@@ -28,11 +28,12 @@ def test_env():
     z = relay.add(x, y)
     z = relay.add(z, z)
     f = relay.Function([x, y], z)
-    env = relay.Environment()
+    env = relay.Module()
     env["myf"] = f
     text = env.astext()
     assert "def @myf" in text
     assert "%1 = add(%0, %0) # ty=float32" in text
+    show(env.astext(annotate=lambda x: str(x.checked_type.dtype)))
     show(text)
 
 
@@ -96,12 +97,18 @@ def test_variable_name():
     v1 = relay.var("1")
     assert "%v1" in v1.astext()
 
+
 def test_mlp():
     net, params = tvm.relay.testing.mlp.get_workload(batch_size=1)
     net.astext()
 
+
 def test_resnet():
     net, params = tvm.relay.testing.resnet.get_workload(batch_size=1)
+    net.astext()
+
+def test_mobilenet():
+    net, params = tvm.relay.testing.mobilenet.get_workload(batch_size=1)
     net.astext()
 
 def test_dqn():
@@ -112,12 +119,34 @@ def test_dcgan():
     net, params = tvm.relay.testing.dcgan.get_workload(batch_size=1)
     net.astext()
 
+
+def test_lstm():
+    net, params = tvm.relay.testing.lstm.get_workload(4, 4)
+    net.astext()
+
+def test_inception_v3():
+    net, params = tvm.relay.testing.inception_v3.get_workload(batch_size=1)
+    net.astext()
+
+def test_squeezenet():
+    for version in ['1.0', '1.1']:
+        net, params = tvm.relay.testing.squeezenet.get_workload(batch_size=1, version=version)
+        net.astext()
+
+def test_vgg():
+    net, params = tvm.relay.testing.vgg.get_workload(batch_size=1)
+    net.astext()
+
 if __name__ == "__main__":
     do_print[0] = True
     test_resnet()
+    test_mobilenet()
     test_mlp()
     test_dqn()
     test_dcgan()
+    test_squeezenet()
+    test_inception_v3()
+    test_vgg()
     test_func()
     test_env()
     test_meta_data()

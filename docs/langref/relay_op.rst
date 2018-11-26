@@ -82,6 +82,7 @@ This level enables additional math and transform operators.
    tvm.relay.reshape_like
    tvm.relay.copy
    tvm.relay.transpose
+   tvm.relay.squeeze
    tvm.relay.floor
    tvm.relay.ceil
    tvm.relay.trunc
@@ -114,7 +115,7 @@ This level enables additional math and transform operators.
    tvm.relay.less_equal
    tvm.relay.maximum
    tvm.relay.minimum
-   tvm.relay.pow
+   tvm.relay.power
    tvm.relay.where
    tvm.relay.argmax
    tvm.relay.argmin
@@ -123,6 +124,7 @@ This level enables additional math and transform operators.
    tvm.relay.min
    tvm.relay.mean
    tvm.relay.prod
+   tvm.relay.strided_slice
 
 
 **Level 5: Vision/Image Operators**
@@ -142,6 +144,7 @@ This level support backpropagation of broadcast operators. It is temporary.
 
    tvm.relay.broadcast_to_like
    tvm.relay.collapse_sum_like
+   tvm.relay.slice_like
 
 
 Level 1 Definitions
@@ -194,6 +197,7 @@ Level 3 Definitions
 .. autofunction:: tvm.relay.reshape
 .. autofunction:: tvm.relay.reshape_like
 .. autofunction:: tvm.relay.copy
+.. autofunction:: tvm.relay.squeeze
 .. autofunction:: tvm.relay.transpose
 .. autofunction:: tvm.relay.take
 .. autofunction:: tvm.relay.zeros
@@ -218,7 +222,7 @@ Level 4 Definitions
 .. autofunction:: tvm.relay.less_equal
 .. autofunction:: tvm.relay.maximum
 .. autofunction:: tvm.relay.minimum
-.. autofunction:: tvm.relay.pow
+.. autofunction:: tvm.relay.power
 .. autofunction:: tvm.relay.where
 .. autofunction:: tvm.relay.argmax
 .. autofunction:: tvm.relay.argmin
@@ -227,7 +231,7 @@ Level 4 Definitions
 .. autofunction:: tvm.relay.min
 .. autofunction:: tvm.relay.mean
 .. autofunction:: tvm.relay.prod
-
+.. autofunction:: tvm.relay.strided_slice
 
 
 Level 5 Definitions
@@ -239,3 +243,4 @@ Level 10 Definitions
 --------------------
 .. autofunction:: tvm.relay.broadcast_to_like
 .. autofunction:: tvm.relay.collapse_sum_like
+.. autofunction:: tvm.relay.slice_like

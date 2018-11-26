@@ -122,24 +122,6 @@ def schedule_conv2d_winograd_without_weight_transform(outs):
 
 
 @tvm.target.generic_func
-def schedule_conv2d_NCHWc_int8_prepacked(outs):
-    """Schedule for conv2d NCHWc int8 with prepacked data and kernel
-
-    Parameters
-    ----------
-    outs: Array of Tensor
-          The computation graph description of this operator
-          in the format of an array of tensors.
-
-    Returns
-    -------
-    sch: Schedule
-        The computation schedule for the op.
-    """
-    return _default_schedule(outs, False)
-
-
-@tvm.target.generic_func
 def schedule_conv2d_transpose_nchw(outs):
     """Schedule for conv2d_transpose_nchw
 
@@ -190,6 +172,42 @@ def schedule_depthwise_conv2d_nhwc(outs):
         The computation schedule for the op.
     """
     return _default_schedule(outs, False)
+
+
+@tvm.target.generic_func
+def schedule_depthwise_conv2d_NCHWc(outs):
+    """Schedule for depthwise_conv2d_NCHWc
+    Parameters
+    ----------
+    outs: Array of Tensor
+          The computation graph description of depthwise_conv2d_nhwc
+          in the format of an array of tensors.
+
+    Returns
+    -------
+    sch: Schedule
+        The computation schedule for the op.
+    """
+    return _default_schedule(outs, False)
+
+
+@tvm.target.generic_func
+def schedule_group_conv2d_nchw(outs):
+    """Schedule for conv2d_nchw
+
+    Parameters
+    ----------
+    outs: Array of Tensor
+          The computation graph description of group_conv2d_nchw
+          in the format of an array of tensors.
+
+    Returns
+    -------
+    sch: Schedule
+        The computation schedule for the op.
+    """
+    return _default_schedule(outs, False)
+
 
 @tvm.target.generic_func
 def schedule_bitserial_conv2d_nchw(outs):
