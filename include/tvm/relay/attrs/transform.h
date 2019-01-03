@@ -151,6 +151,32 @@ struct SliceLikeAttrs : public tvm::AttrsNode<SliceLikeAttrs> {
   }
 };
 
+// Clip
+struct ClipAttrs : public tvm::AttrsNode<ClipAttrs> {
+  double a_min;
+  double a_max;
+
+  TVM_DECLARE_ATTRS(ClipAttrs, "relay.attrs.ClipAttrs") {
+  TVM_ATTR_FIELD(a_min)
+    .describe("The minimum clip value.");
+  TVM_ATTR_FIELD(a_max)
+    .describe("The maximum clip value.");
+  }
+};
+
+
+struct LayoutTransformAttrs : public tvm::AttrsNode<LayoutTransformAttrs> {
+  std::string src_layout;
+  std::string dst_layout;
+
+  TVM_DECLARE_ATTRS(LayoutTransformAttrs, "relay.attrs.LayoutTransformAttrs") {
+    TVM_ATTR_FIELD(src_layout)
+        .describe("The source layout of the tensor. (e.g. NCHW)");
+    TVM_ATTR_FIELD(dst_layout)
+        .describe("The destination layout of the tensor. (e.g. NCHW16c)");
+  }
+};
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_ATTRS_TRANSFORM_H_

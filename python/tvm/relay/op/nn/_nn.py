@@ -76,7 +76,7 @@ def compute_conv2d(attrs, inputs, out_type, target):
         out = topi.nn.depthwise_conv2d_nchw(
             inputs[0], inputs[1], strides, padding, dilation, out_dtype=out_dtype)
     elif layout == "NHWC" and \
-         kernel_layout == "HWOI" and\
+         weight_layout == "HWOI" and\
          get_const_int(inputs[1].shape[2]) == groups and \
          get_const_int(inputs[1].shape[3]) == 1:
         out = topi.nn.depthwise_conv2d_nhwc(
@@ -106,6 +106,12 @@ def schedule_conv2d(attrs, outs, target):
             elif layout == "NHWC" and kernel_layout == "HWOI":
                 return topi.generic.schedule_depthwise_conv2d_nhwc(outs)
     raise ValueError("No compatible schedule")
+
+
+@reg.register_alter_op_layout("nn.conv2d")
+def alter_op_layout_conv2d(attrs, inputs, tinfos):
+    """Alternate the layout of conv2d"""
+    return None
 
 reg.register_pattern("nn.conv2d", OpPattern.OUT_ELEMWISE_FUSABLE)
 
@@ -242,3 +248,12 @@ def schedule_l2_normalize(attrs, outs, target):
         return topi.generic.schedule_l2_normalize(outs)
 
 reg.register_pattern("nn.l2_normalize", OpPattern.OUT_ELEMWISE_FUSABLE)
+
+# Upsampling
+reg.register_schedule("nn.upsampling", reg.schedule_injective)
+def schedule_upsampling(_, outs, target):
+    """Schedule definition of upsampling"""
+    with target:
+        return topi.generic.schedule_injective(outs)
+# pad
+reg.register_schedule("nn.pad", schedule_broadcast)

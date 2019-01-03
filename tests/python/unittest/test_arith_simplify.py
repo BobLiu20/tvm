@@ -20,6 +20,16 @@ def test_simplify():
     zz = zz.a
     assert zz.a == x and zz.b.value == 4
 
+    n = tvm.var('n')
+    assert tvm.ir_pass.Equal(tvm.ir_pass.CanonicalSimplify(n % (-1)), tvm.const(0, "int32"))
+    assert tvm.ir_pass.Equal(tvm.ir_pass.CanonicalSimplify(n % 1), tvm.const(0, "int32"))
+    assert tvm.ir_pass.Equal(tvm.ir_pass.CanonicalSimplify(n / 1), n)
+    tvm.ir_pass.CanonicalSimplify(n / (-1))
+    # This is not true in the current implementation
+    #  assert tvm.ir_pass.Equal(tvm.ir_pass.CanonicalSimplify(n / (-1)),
+    #                           tvm.ir_pass.CanonicalSimplify(-n))
+
+
 def test_simplify_mod():
     """Not yet working, mock design"""
     ib = tvm.ir_builder.create()
@@ -36,27 +46,41 @@ def test_simplify_mod():
         (j + n * 32) % 16, {j: tvm.Range(0, 6)})
     assert index == j
 
+def test_simplify_minmax():
+    x = tvm.var('x')
+    e1 = tvm.max(x, 1) - tvm.max(x, 1)
+    e1s = tvm.ir_pass.CanonicalSimplify(e1)
+    assert e1s.value == 0
+
+    e2 = tvm.min(x, 1) - tvm.min(x, 1)
+    e2s = tvm.ir_pass.CanonicalSimplify(e2)
+    assert e2s.value == 0
+
+def test_mul():
+    x = tvm.var('x')
+    e = x * x - x * x
+    es = tvm.ir_pass.CanonicalSimplify(e)
+    assert es.value == 0
 
 def test_modular():
     rx = tvm.var("rx")
     ry = tvm.var("ry")
     y = tvm.var("y")
     x = tvm.var("x")
-    vmap = {rx: tvm.Range(tvm.const(0), tvm.const(3)),
-            ry: tvm.Range(tvm.const(0), tvm.const(3)),
-            y: tvm.Range(tvm.const(0), tvm.const(2)),
-            x: tvm.Range(tvm.const(0), tvm.const(14))}
+    i32_const = lambda x: tvm.const(x, "int32")
+    vmap = {rx: tvm.Range(i32_const(0), i32_const(3)),
+            ry: tvm.Range(i32_const(0), i32_const(3)),
+            y: tvm.Range(i32_const(0), i32_const(2)),
+            x: tvm.Range(i32_const(0), i32_const(14))}
     idx = ry * 16 + rx + y * 16 + x
     z1 = tvm.ir_pass.CanonicalSimplify(idx // 16, vmap)
     z2 = tvm.ir_pass.CanonicalSimplify(idx % 16, vmap)
     assert tvm.ir_pass.CanonicalSimplify(z1 - (ry + y)).value == 0
     assert tvm.ir_pass.CanonicalSimplify(z2 - (rx + x)).value == 0
 
-
-
-
-
 if __name__ == "__main__":
     test_simplify_mod()
     test_modular()
     test_simplify()
+    test_mul()
+    test_simplify_minmax()

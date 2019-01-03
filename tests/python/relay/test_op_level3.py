@@ -46,6 +46,11 @@ def test_cast():
     assert "dtype=" in yy.astext()
     assert yy.checked_type == relay.TensorType((8, 9, 4), "int32")
 
+    x = relay.var("x", relay.TensorType((8, 9, 4), "float32"))
+    y = relay.cast(x, "int32")
+    yy = relay.ir_pass.infer_type(y)
+    assert "dtype=" in yy.astext()
+    assert yy.checked_type == relay.TensorType((8, 9, 4), "int32")
 
 def test_clip():
     a = relay.var("a", relay.TensorType((10, 4), "float32"))
@@ -82,10 +87,33 @@ def test_transpose_infer_type():
     n, t, d = tvm.var("n"), tvm.var("t"), 100
     x = relay.var("x", relay.TensorType((n, t, d), "float32"))
     y = relay.transpose(x, axes=(1, 0, 2))
-    "axes=" in y.astext()
+    assert "axes=" in y.astext()
     yy = relay.ir_pass.infer_type(y)
     assert yy.checked_type == relay.TensorType(
         (t, n, 100), "float32")
+
+    y = relay.transpose(x)
+    assert "axes=" in y.astext()
+    yy = relay.ir_pass.infer_type(y)
+    assert yy.checked_type == relay.TensorType(
+        (100, t, n), "float32")
+
+
+def test_transpose():
+    def verify_transpose(dshape, axes):
+        x = relay.var("x", relay.TensorType(dshape, "float32"))
+        z = relay.transpose(x, axes=axes)
+
+        func = relay.Function([x], z)
+        x_data = np.random.uniform(low=-1, high=1, size=dshape).astype("float32")
+        ref_res = np.transpose(x_data, axes=axes)
+
+        for target, ctx in ctx_list():
+            for kind in ["graph", "debug"]:
+                intrp = relay.create_executor(kind, ctx=ctx, target=target)
+                op_res = intrp.evaluate(func)(x_data)
+                tvm.testing.assert_allclose(op_res.asnumpy(), ref_res, rtol=1e-5)
+    verify_transpose((2, 3, 4), (0, 2, 1))
 
 
 def test_squeeze_infer_type():
@@ -202,6 +230,35 @@ def test_take_infer_type():
     verify_take((d1, d2), (d3, d4, d5), (d1, d3, d4, d5), 1)
     verify_take((d1, d2, d3, d4), (d5, d6), (d1, d2, d5, d6, d4), -2)
 
+def test_take():
+    def verify_take(src_shape, indices_src, axis=None):
+        src_dtype = "float32"
+        indices_dtype = "int32"
+        indices_src = np.array(indices_src, dtype=indices_dtype)
+        x = relay.var("x", relay.TensorType(src_shape, src_dtype))
+        indices = relay.var("indices", relay.TensorType(indices_src.shape, indices_dtype))
+        z = relay.take(x, indices, axis=axis)
+
+        func = relay.Function([x, indices], z)
+        x_data = np.random.uniform(low=-1, high=1, size=src_shape).astype(src_dtype)
+        ref_res = np.take(x_data, indices=indices_src, axis=axis)
+
+        for target, ctx in ctx_list():
+            for kind in ["graph", "debug"]:
+                intrp = relay.create_executor(kind, ctx=ctx, target=target)
+                op_res = intrp.evaluate(func)(x_data, indices_src)
+                tvm.testing.assert_allclose(op_res.asnumpy(), ref_res, rtol=1e-5)
+
+    verify_take((4,), [1])
+    verify_take((4,), [[0,1,2,3]])
+    verify_take((3,3,3), [[11,25]])
+    verify_take((4,), [[0,1],[2,3]])
+    verify_take((4,), [1], 0)
+    verify_take((2,2), [[[1,0],[0,1]]], 0)
+    verify_take((2,2), [[[1,0],[0,1]]], 1)
+    verify_take((4,3,5,6), [[2,1,0,0]], -2)
+
+
 def test_split_infer_type():
     def verify_split(dshape, indices_or_sections, ret_type, axis=None):
         x = relay.var("x", relay.ty.TensorType(dshape, "float32"))
@@ -248,7 +305,7 @@ def test_split_infer_type():
                      relay.ty.TensorType((d1, (d2-7), d3, d4), "float32")])),
                   axis=1)
 
-def test_full():
+def test_full_infer_type():
     # default settings: match input dtype
     x = relay.var("x", relay.TensorType((), "int8"))
     y = relay.full(x, ())
@@ -263,7 +320,22 @@ def test_full():
     assert yy.checked_type == relay.TensorType((1, 2), "int8")
 
 
-def test_full_like():
+def test_full():
+    def verify_full(fill_value, src_shape, dtype):
+        x = relay.var("x", relay.scalar_type(dtype))
+        z = relay.full(x, src_shape, dtype)
+        func = relay.Function([x], z)
+        ref_res = np.full(src_shape, fill_value)
+        for target, ctx in ctx_list():
+            for kind in ["graph", "debug"]:
+                intrp = relay.create_executor(kind, ctx=ctx, target=target)
+                op_res = intrp.evaluate(func)(np.array(fill_value, dtype))
+                tvm.testing.assert_allclose(op_res.asnumpy(), ref_res, rtol=1e-5)
+    verify_full(4, (1, 3, 4, 4), "int32")
+    verify_full(4.0, (1, 4), "float32")
+
+
+def test_full_like_infer_type():
     # concrete shape
     base = relay.var("base", relay.TensorType((1, 2, 3), "float32"))
     fill = relay.var("fill", relay.TensorType((), "float32"))
@@ -278,6 +350,26 @@ def test_full_like():
     y = relay.full_like(base, fill)
     yy = relay.ir_pass.infer_type(y)
     assert yy.checked_type == relay.TensorType((n, c, h, w), "float32")
+
+
+def test_full_like():
+    def verify_full_like(base, fill_value, dtype):
+        x_data = np.random.uniform(low=-1, high=1, size=base).astype(dtype)
+        x = relay.var("x", relay.TensorType(base, dtype))
+        y = relay.var("y", relay.scalar_type(dtype))
+        z = relay.full_like(x, y)
+
+        func = relay.Function([x, y], z)
+        ref_res = np.full_like(x_data, fill_value)
+
+        for target, ctx in ctx_list():
+            for kind in ["graph", "debug"]:
+                intrp = relay.create_executor(kind, ctx=ctx, target=target)
+                op_res = intrp.evaluate(func)(x_data, np.array(fill_value, dtype))
+                tvm.testing.assert_allclose(op_res.asnumpy(), ref_res, rtol=1e-5)
+    verify_full_like((1, 3, 4, 4), 4, "int32")
+    verify_full_like((1, 1), 44.0, "float32")
+
 
 def test_infer_type_leaky_relu():
     n, c , h, w = tvm.var("n"), tvm.var("c"), tvm.var("h"), tvm.var("w")
@@ -360,12 +452,16 @@ if __name__ == "__main__":
     test_unary_identity()
     test_clip()
     test_transpose_infer_type()
+    test_transpose()
     test_reshape_infer_type()
     test_reshape()
     test_reshape_like_infer_type()
     test_reshape_like()
     test_take_infer_type()
+    test_take()
+    test_full_infer_type()
     test_full()
+    test_full_like_infer_type()
     test_full_like()
     test_infer_type_leaky_relu()
     test_infer_type_prelu()

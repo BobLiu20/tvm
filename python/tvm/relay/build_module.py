@@ -13,10 +13,11 @@ from .backend import graph_runtime_codegen as _graph_gen
 # List of optimization pass and level when switch on
 OPT_PASS_LEVEL = {
     "SimplifyInference": 0,
-    "CombineParallelConv2D": 4,
     "OpFusion": 1,
     "FoldConstant": 2,
+    "CombineParallelConv2D": 3,
     "FoldScaleAxis": 3,
+    "AlterOpLayout": 3,
 }
 
 class BuildConfig(object):
@@ -149,14 +150,22 @@ def optimize(func, params=None):
         func = ir_pass.infer_type(func)
         func = ir_pass.combine_parallel_conv2d(func)
 
+    if cfg.pass_enabled("FoldConstant"):
+        func = ir_pass.fold_constant(func)
+
     if cfg.pass_enabled("FoldScaleAxis"):
         func = ir_pass.infer_type(func)
         func = ir_pass.backward_fold_scale_axis(func)
         func = ir_pass.infer_type(func)
         func = ir_pass.forward_fold_scale_axis(func)
-
-    if cfg.pass_enabled("FoldConstant"):
         func = ir_pass.fold_constant(func)
+
+    if cfg.pass_enabled("AlterOpLayout"):
+        func = ir_pass.infer_type(func)
+        func = ir_pass.canonicalize_ops(func)
+        func = ir_pass.infer_type(func)
+        func = ir_pass.alter_op_layout(func)
+
     return func
 
 
@@ -232,13 +241,13 @@ class GraphExecutor(_interpreter.Executor):
 
     Parameters
     ----------
-    mod : tvm.relay.Module
+    mod : :py:class:`~tvm.relay.module.Module`
         The module to support the execution.
 
-    ctx : tvm.TVMContext
+    ctx : :py:class:`TVMContext`
         The runtime context to run the code on.
 
-    target : tvm.Target
+    target : :py:class:`Target`
         The target option to build the function.
     """
     def __init__(self, mod, ctx, target):
@@ -274,13 +283,13 @@ def create_executor(kind="debug",
     kind : str
         The type of executor
 
-    mod : relay.Mod
-        The mod
+    mod : :py:class:`~tvm.relay.module.Module`
+        The Relay module containing collection of functions
 
-    ctx : tvm.TVMContext
+    ctx : :py:class:`tvm.TVMContext`
         The context to execute the code.
 
-    target : tvm.Target
+    target : :py:class:`tvm.Target`
         The corresponding context
     """
     if ctx is not None:

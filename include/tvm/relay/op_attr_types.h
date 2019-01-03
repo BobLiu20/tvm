@@ -49,6 +49,11 @@ using TOpPattern = int;
 using TOpIsStateful = bool;
 
 /*!
+ * \brief Mark the operator as non-computational.
+ */
+using TNonComputational = bool;
+
+/*!
  * \brief Computation description interface.
  *
  * \note This function have a special convention
@@ -85,6 +90,21 @@ using FTVMSchedule = runtime::TypedPackedFunc<
   Schedule(const Attrs& attrs,
            const Array<Tensor>& outs,
            const Target& target)>;
+
+/*!
+ * \brief Alternate the layout of operators or replace the
+ *  operator with other expressions. This function will be invoked
+ *  in AlterOpLayout pass.
+ * \param attrs The attribute of the original node.
+ * \param inputs The input symbols of the original node.
+ * \param tinfos An array of placeholders, use for getting the inferred shape
+ *               and dtype of the inputs.
+ * \return new_expr The modified expression.
+ */
+using FTVMAlterOpLayout = runtime::TypedPackedFunc<
+  Expr(const Attrs& attrs,
+       const Array<Expr>& args,
+       const Array<Tensor>& tinfos)>;
 
 /*!
  * \brief Forward rewriting rule for a specific op.

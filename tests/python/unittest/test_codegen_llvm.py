@@ -2,6 +2,7 @@ import tvm
 from tvm.contrib import util, clang
 import numpy as np
 import ctypes
+import math
 
 def test_llvm_intrin():
     ib = tvm.ir_builder.create()
@@ -348,6 +349,30 @@ def test_rank_zero():
         tvm.testing.assert_allclose(d.asnumpy(), d_np)
     check_llvm(64)
 
+def test_rank_zero_bound_checkers():
+    def check_llvm(n):
+        if not tvm.module.enabled("llvm"):
+            return
+        with tvm.build_config(instrument_bound_checkers=True):
+            A = tvm.placeholder((n, ), name='A')
+            scale = tvm.placeholder((), name='scale')
+            k = tvm.reduce_axis((0, n), name="k")
+            C = tvm.compute((), lambda : tvm.sum(A[k] * scale, axis=k), name="C")
+            D = tvm.compute((), lambda : C + 1)
+            s = tvm.create_schedule(D.op)
+            # build and invoke the kernel.
+            f = tvm.build(s, [A, scale, D], "llvm")
+            ctx = tvm.cpu(0)
+            # launch the kernel.
+            a = tvm.nd.array(np.random.randint(0, 2, size=(n,)).astype(A.dtype), ctx)
+            sc = tvm.nd.array(
+                np.random.randint(0, 2, size=()).astype(scale.dtype), ctx)
+            d = tvm.nd.empty((), D.dtype, ctx)
+            f(a, sc, d)
+            d_np = np.sum(a.asnumpy()) * sc.asnumpy() + 1
+            tvm.testing.assert_allclose(d.asnumpy(), d_np)
+    check_llvm(64)
+
 
 def test_alignment():
     n = tvm.convert(1024)
@@ -362,11 +387,46 @@ def test_alignment():
         if "align" in l and "4 x float" in l:
             assert "align 32" in l
 
+def test_llvm_div():
+    """Check that the semantics of div and mod is the same as in C/C++"""
+    def check_div(start, end, divisor, dtype):
+        T = tvm.compute((end - start,),
+                        lambda i: tvm.expr.Cast(dtype, (start + i)) / tvm.const(divisor, dtype))
+        s = tvm.create_schedule([T.op])
+        f = tvm.build(s, [T], "llvm")
+        a = tvm.nd.empty((end - start,), dtype)
+        f(a)
+        ref = [int(float(i)/divisor) for i in range(start, end)]
+        tvm.testing.assert_allclose(a.asnumpy(), ref)
+
+    def check_mod(start, end, divisor, dtype):
+        T = tvm.compute((end - start,),
+                        lambda i: tvm.expr.Cast(dtype, (start + i)) % tvm.const(divisor, dtype))
+        s = tvm.create_schedule([T.op])
+        f = tvm.build(s, [T], "llvm")
+        a = tvm.nd.empty((end - start,), dtype)
+        f(a)
+        ref = [int(math.fmod(i, divisor)) for i in range(start, end)]
+        tvm.testing.assert_allclose(a.asnumpy(), ref)
+
+    def check_llvm(start, end, divisor, dtype):
+        check_div(start, end, divisor, dtype)
+        check_mod(start, end, divisor, dtype)
+
+    for d in range(-5, 6):
+        if d != 0:
+            # Note that 11 (and not e.g. 10) is used to avoid issues with the simplifier
+            check_llvm(-11, 11, d, 'int32')
+            check_llvm(-11, 11, d, 'int8')
+            if d > 0:
+                check_llvm(123, 133, d, 'uint8')
+                check_llvm(0, 256, d, 'uint8')
 
 if __name__ == "__main__":
     test_llvm_import()
     test_alignment()
     test_rank_zero()
+    test_rank_zero_bound_checkers()
     test_llvm_bool()
     test_llvm_persist_parallel()
     test_llvm_select()
@@ -378,3 +438,4 @@ if __name__ == "__main__":
     test_llvm_madd_pipeline()
     test_llvm_temp_space()
     test_llvm_lookup_intrin()
+    test_llvm_div()

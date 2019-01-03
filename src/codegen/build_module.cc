@@ -58,7 +58,7 @@ Target CreateTarget(const std::string& target_name,
   }
   t->device_type = kDLCPU;
   t->thread_warp_size = 1;
-  if (target_name == "llvm") {
+  if (target_name == "c" || target_name == "llvm") {
     t->keys_array.push_back(ir::StringImm::make("cpu"));
   } else if (target_name == "cuda" || target_name == "nvptx") {
     t->device_type = kDLGPU;
@@ -364,7 +364,8 @@ Stmt BuildStmt(Schedule sch,
   stmt = ir::InjectPrefetch(stmt);
 
   // Phase 1
-  stmt = ir::StorageFlatten(stmt, out_binds, 64);
+  stmt = ir::StorageFlatten(stmt, out_binds, 64,
+                            config->instrument_bound_checkers);
   stmt = ir::CanonicalSimplify(stmt);
   if (loop_partition) {
     stmt = ir::LoopPartition(stmt, config->partition_const_loop);
@@ -381,6 +382,9 @@ Stmt BuildStmt(Schedule sch,
   stmt = ir::LowerStorageAccessInfo(stmt);
   stmt = ir::RemoveNoOp(stmt);
   stmt = ir::RewriteUnsafeSelect(stmt);
+
+  if (config->instrument_bound_checkers)
+    stmt = ir::InstrumentBoundCheckers(stmt);
 
   return stmt;
 }

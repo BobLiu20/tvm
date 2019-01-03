@@ -10,6 +10,19 @@ from . import _make
 from .expr import Expr
 from .ty import Type
 
+def post_order_visit(expr, fvisit):
+    """Recursively visit the ir in post DFS order node,
+    apply fvisit. Each node is guaranteed to be visited
+    only once.
+
+    Parameters
+    ----------
+    expr : tvm.relay.Expr
+        The input expression.
+    fvisit : function
+        The visitor function to be applied.
+    """
+    return _ir_pass.post_order_visit(expr, fvisit)
 
 def infer_type(expr, mod=None):
     """Infer the type of expr under the context of mod.
@@ -178,6 +191,23 @@ def simplify_inference(expr):
     return _ir_pass.simplify_inference(expr)
 
 
+def canonicalize_ops(expr):
+    """ Canonicalize special operators to basic operators.
+    This can simplify latter analysis. (e.g. Expand bias_add to expand_dims and broadcast_add.)
+
+    Parameters
+    ----------
+    e: tvm.relay.Expr
+        The input Expression
+
+    Returns
+    -------
+    result: tvm.relay.Expr
+        An expression without bias_add
+    """
+    return _ir_pass.canonicalize_ops(expr)
+
+
 def dead_code_elimination(expr):
     """ Remove expressions which does not effect the program result (dead code).
 
@@ -308,3 +338,22 @@ def combine_parallel_conv2d(expr):
         Transformed expression
     """
     return _ir_pass.CombineParallelConv2D(expr)
+
+
+def alter_op_layout(expr):
+    """Alternate the layouts of operators or replace primitive operators with
+    other expressions.
+    This pass can be used for computing convolution in custom layouts or
+    other general weight pre-transformation.
+
+    Parameters
+    ----------
+    expr : tvm.relay.Expr
+        The input expression.
+
+    Returns
+    -------
+    transformed_expr : tvm.relay.Expr
+        Transformed expression with alternated layout.
+    """
+    return _ir_pass.AlterOpLayout(expr)
